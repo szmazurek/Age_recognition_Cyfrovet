@@ -18,8 +18,7 @@ from wandb.keras import WandbCallback
 from sklearn.model_selection import StratifiedKFold
 ## basic configuration
 
-os.environ["WANDB_NOTEBOOK_NAME"] = "ML_Veterinary_DataLoader.ipynb" 
-os.environ["WANDB_API_KEY"] = "37db6daf3fa79fefaa88342b2be82f52bd0ad699" 
+
 DIRPATH = '/net/scratch/people/plgmazurekagh/Downloaded_imgs_Petfinder_copy'
 physical_devices = tf.config.list_physical_devices('GPU')
 for device in physical_devices:
