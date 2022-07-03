@@ -1,36 +1,24 @@
-from matplotlib import pyplot as plt
+"""This script contains various functions to automate repeating task encountered during
+the development of the project. Note that this script may be not compatibile with present models
+as some of the functions were developed for the early stages of the project.
+"""
 import cv2
-import tensorflow as tf
-import tensorflow.keras.backend as K
-import os
-import dlib
-from imutils import face_utils
-import numpy as np
-import os
-import cv2
-import dlib
-import shutil
-from mpl_toolkits.axes_grid1 import ImageGrid
 import string
-from scipy.ndimage import correlate as corr
-from sklearn.metrics import mean_squared_error as MSE
+import os
+import shutil
+import dlib
+import tensorflow as tf
+import numpy as np
 from skimage import io
 from pathlib import Path
+from imutils import face_utils
+from mpl_toolkits.axes_grid1 import ImageGrid
+from scipy.ndimage import correlate as corr
+from matplotlib import pyplot as plt
+import tensorflow.keras.backend as K
+from sklearn.metrics import mean_squared_error as MSE
 
-#dlib.DLIB_USE_CUDA = False
-## input pipeline to preprocess the photo for the model:
-## 1. Put photos you want to use in a folder/folders
-## 2. Prepare thrash folders for every folder to store
-## photos inproper for the network (no face detection)
-## 3. Use method all_img_loop on folders with your inputs
-## 4. You can load the photos to the netowrk calling 
-## predict_on_examples method. It is possible to customize 
-## input to also display heatmap of the photos in the folder
-## and create templates of heatmap footprints
-
-## WARNING! SOME FUNCTIONS ARE SUITED TO WORK WITH CNN NETWORK AND ARE THEREFORE INVALID TO USE WITH TRANSFORMER ##
-## THIS FILE WILL BE UPDATED IN THE FUTURE ##
-
+## mean and std values for RGB channels obtained from a given dataset
 
 mean_vals = {
     "Red" : 123,
@@ -45,16 +33,12 @@ std_vals = {
 }
 
 IMG_SIZE = 224
-
-MODELPATH = Path('/Model/model_weights.dat')
-DETECTOR = Path('/Utils/dogHeadDetector.dat')
-PREDICTOR = Path('/Utils/landmarkDetector.dat')
-## Load model
-#model = tf.keras.models.load_model(MODELPATH) ## currently not supported for transformer network
 ## Load detector libraries
-detector = dlib.cnn_face_detection_model_v1(DETECTOR)
-predictor = dlib.shape_predictor(PREDICTOR)
-CATEGORIES = ["Adult", "Young", "Senior"]
+DETECTOR = dlib.cnn_face_detection_model_v1(Path('utils\dogHeadDetector.dat'))
+PREDICTOR = dlib.shape_predictor(Path('utils\landmarkDetector.dat'))
+
+## age categories used for training the model, always in the alphabetical order
+CATEGORIES = ["Adult", "Senior", "Young"]
 
 
 def disp_hist(path : string, iteration_number : int = 0):
@@ -80,7 +64,7 @@ def disp_hist(path : string, iteration_number : int = 0):
         _ = plt.imshow(img)
         plt.show()
 
-def predDecoder(prediction):
+def pred_decoder(prediction):
 
     """ Decodes network's predictions
     """
@@ -91,18 +75,6 @@ def predDecoder(prediction):
     print("Confidence: "+ str(prob))
     return (CATEGORIES[x])
 
-def bhatt_dist(p1,p2):
-    
-    """ Experimental - calculates Bhattacharyya distance 
-    of two probability dstributions
-    """
-    bht = []
-    dim = 100
-    for i in range (0,100):
-        for j in range(0,100):
-            bht[i,j] = np.sqrt(p1[i,j]*p2[i,j])
-    bht_sum = np.sum(bht)
-    return (-1)*np.ln(bht_sum)
 
 def feature_norm(input_img : np.ndarray):
     """ Normalizes RGB channels of input photo with respect to the
@@ -138,11 +110,6 @@ def training_preprocessor(input_path : string, res : tuple =(IMG_SIZE,IMG_SIZE))
     img = feature_norm(img)
     img = np.expand_dims(img, axis=0)
     return img
-
-
-
-
-
 
 def slice_img(image: np.ndarray, kernel_size: tuple):
     """ Divides input image to smaller parts (slices).
@@ -209,6 +176,8 @@ def equalize_image(img):
 
 
 def predict_on_examples(dirpath : string,
+model,
+last_conv_index : int,
 ground_truth : string ='Unknown',
 display_image : bool = False, 
 display_heatmap : bool = False, 
@@ -221,8 +190,10 @@ intensity : float = 0.8):
         of many inputs
 
     Args:
-        dirpath (string): path to directory containing photos
-        ground_truth (string, optional): labal for input image. Defaults to 'Unknown'.
+        dirpath (string): path to directory containing photos.
+        model: an tf.keras.Model or tf.keras.Sequential instance to examine.
+        last_conv_index(int): index of last convolutional layer in the model.
+        ground_truth (string, optional): label for input image. Defaults to 'Unknown'.
         display_image (bool, optional): show input image. Defaults to False.
         display_heatmap (bool, optional): show image heatmap. Defaults to False.
         display_template (bool, optional): show template image. Defaults to False.
@@ -242,16 +213,16 @@ intensity : float = 0.8):
     hm_sum = np.zeros((res[0], res[1], 3, 1))
     for i in range(iteration_number):
         img_path=dirpath+piclist[i]
-        if display_image == True:
+        if display_image:
             img = io.imread(img_path)
             plt.imshow(img)
             plt.show()
         img = training_preprocessor(img_path)
         preds = model.predict(img)[0]
-        predDecoder(preds)
+        pred_decoder(preds)
         print("Ground_truth: "+ ground_truth)
-        if display_heatmap == True or display_template == True:
-            conv_layer = model.get_layer(index=6)
+        if display_heatmap or display_template :
+            conv_layer = model.get_layer(index=last_conv_index)
             heatmap_model = tf.keras.models.Model([model.inputs], [conv_layer.output, model.output])
             with tf.GradientTape() as gtape:
                 conv_output, predictions = heatmap_model(img)
@@ -273,7 +244,6 @@ intensity : float = 0.8):
             
             heatmap = cv2.resize(heatmap, res)
             heatmap = cv2.applyColorMap(np.uint8(255*heatmap), cv2.COLORMAP_HOT)
-            # heatmap = equalize_image(heatmap)
             
             heatmap = equalize_image(heatmap)
 
@@ -281,7 +251,7 @@ intensity : float = 0.8):
             img_hm = cv2.cvtColor(img_hm.astype('float32'), cv2.COLOR_BGR2RGB)
             img_hm = img_hm/np.amax(img_hm)
 
-            if display_heatmap == True:
+            if display_heatmap:
                 fig, ax = plt.subplots(1,3, figsize=(20, 20))
                 ax[0].imshow(img)
                 ax[0].set_title("Input image")
@@ -294,7 +264,7 @@ intensity : float = 0.8):
                 ax[2].set_title("Heatmap")
                 plt.axis('off')
                 plt.show()
-            if display_template == True:
+            if display_template:
                 features = features_detector(img)
                 if len(features):
                     img = img_rotate(img, features, res=res)
@@ -318,11 +288,11 @@ intensity : float = 0.8):
                         ax[2].matshow(hm_median)
                         ax[2].title.set_text('heatmaps median')
                         plt.show()
-    if display_template == True:
+    if display_template:
         return hm_sum, hm_sum_disp, hm_mean, hm_median
 
 
-def Hm_loader(path : string):
+def hm_loader(path : string):
     """ loads the heatmap from numpy array saved as txt file
         and reshapes it to original shape takes path to saved .txt as input
         returns reshaped template image
@@ -381,7 +351,7 @@ def features_detector(src_image: np.ndarray, equalize : bool = True):
     Returns:
         (tuple): tuple of cordinations of facial features in order forehead, right_ear, right_eye, nose, left_ear, left_eye
     """
-    if equalize == True:
+    if equalize:
         ycrvb_img = cv2.cvtColor(src_image, cv2.COLOR_BGR2YCrCb)
         ycrvb_img[:, :, 0] = cv2.equalizeHist(ycrvb_img[:, :, 0])
 
@@ -389,11 +359,11 @@ def features_detector(src_image: np.ndarray, equalize : bool = True):
         yuv_img[:, :, 0] = cv2.equalizeHist(yuv_img[:, :, 0])
 
         equlized_img1 = cv2.cvtColor(ycrvb_img, cv2.COLOR_YCrCb2BGR)
-        dets = detector(equlized_img1, upsample_num_times=1)
+        dets = DETECTOR(equlized_img1, upsample_num_times=1)
     else:
-        dets = detector(src_image, upsample_num_times=1)
+        dets = DETECTOR(src_image, upsample_num_times=1)
     if len(dets):
-        shape = predictor(equlized_img1, dets.pop().rect)
+        shape = PREDICTOR(equlized_img1, dets.pop().rect)
         (forehead, right_ear, right_eye, nose, left_ear, left_eye) = face_utils.shape_to_np(shape)
 
         return (forehead, right_ear, right_eye, nose, left_ear, left_eye)
@@ -413,7 +383,7 @@ def img_rotate(src_image: np.ndarray, face_features: tuple, res : tuple =(IMG_SI
         res (tuple, optional): output image size. Defaults to (100, 100).
 
     Returns:
-        (np.ndarrat): rotated input image
+        (np.ndarray): rotated input image
     """
 
     (forehead, right_ear, (x2, y2), nose, left_ear, (x1, y1)) = face_features
@@ -489,7 +459,7 @@ def check_triangle_angles(face_features: tuple, max_angle : float = 70.0):
     return False
 
 
-def Face_detector(img: np.ndarray):
+def face_detector(img: np.ndarray):
     """ detects and return posiion of dog face. Takes np.ndarray image and retuns positions for rectangle
 
     Args:
@@ -505,7 +475,6 @@ def Face_detector(img: np.ndarray):
     img_in = cv2.cvtColor(img_in, cv2.COLOR_BGR2RGB)
 
     gray = cv2.cvtColor(img_in, cv2.COLOR_BGR2GRAY)
-    th, threshed = cv2.threshold(gray, 240, 255, cv2.THRESH_BINARY_INV) 
 
     cnts = cv2.findContours(gray, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[-2]
     cnt = sorted(cnts, key=cv2.contourArea)[-1]
@@ -515,7 +484,7 @@ def Face_detector(img: np.ndarray):
 
     plt.imshow(dst)
 
-    dets = detector(img_in, upsample_num_times =1)
+    dets = DETECTOR(img_in, upsample_num_times =1)
 
     img_result = img_in.copy()
 
@@ -535,7 +504,7 @@ def Face_detector(img: np.ndarray):
     shapes = []
 
     for i, d in enumerate(dets):
-        shape = predictor(img_in, d.rect)
+        shape = PREDICTOR(img_in, d.rect)
         shape = face_utils.shape_to_np(shape)
         shapes.append(shape)
     try:
@@ -550,7 +519,7 @@ def img_preprocess(src : string, thrash : string):
         photos will be copied to thrash correct will be cropped and saved 
         in the same folder
 
-        run only ONCE on given folderrun only ONCE on given folder
+        run only ONCE on given folder
 
     Args:
         src (string): source folder containing images to be procesed 
@@ -561,7 +530,7 @@ def img_preprocess(src : string, thrash : string):
         img = cv2.imread(string_e)
         IMG_SIZE =224
         try:
-            x1, x2, y1, y2 = Face_detector(img)
+            x1, x2, y1, y2 = face_detector(img)
             img = img[y1:y2,x1:x2]
             img = cv2.resize(img,(IMG_SIZE,IMG_SIZE))
             resized_image = img
@@ -600,25 +569,20 @@ def max_val_ssim (img1 : tf.Tensor, img2 : tf.Tensor = None, single_arg : bool =
     return max_val
 
 
-def img_to_tensor(input_img : np.ndarray):
-    """ Converts input image to 4D tf.Tensor with batch size 1
+def metrics_calculator(input_img : np.ndarray, template_img : np.ndarray):
+    """ Calculates MSE, SSIM and correlation between 
+    the input image and template image.
 
     Args:
         input_img (np.ndarray): input image or array
+        template_img (np.ndarray): image to compare the input image with
 
     Returns:
-        (tf.Tensor): converted image to 4D tensor
+        (list): list containing the MSE, SSIM and correlation values
     """
-    output_img = tf.convert_to_tensor(input_img)
-    shapes = input_img.shape
-    output_img = tf.reshape(output_img,[1,shapes[0],shapes[1],shapes[2]])
-    return output_img
-
-
-
-def metrics_calculator(input_pred,input_template):
-    MSE_metric = MSE(input_template.numpy().flatten(),input_pred.numpy().flatten())
-    SSIM_metric = tf.image.ssim(input_pred,input_template, max_val=max_val_ssim(input_pred,input_template)).numpy()[0]
-    Correlation_metric = corr(input_pred,input_template)
-    return  SSIM_metric, MSE_metric, Correlation_metric
+    mse_metric = tf.convert_to_tensor(MSE(template_img.numpy().flatten(),input_img.numpy().flatten()))
+    ssim_metric = tf.image.ssim(input_img,template_img,
+    max_val=max_val_ssim(input_img,template_img)).numpy()[0]
+    correlation_metric = tf.convert_to_tensor(corr(input_img,template_img))
+    return  [mse_metric, ssim_metric, correlation_metric]
 
