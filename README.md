@@ -1,4 +1,5 @@
-#Dog age assessment project led by CyfroVet, an initiative for veterinary medicine created by ACC Cyfronet AGH in Cracow. 
+#Dog age assessment project led by CyfroVet, an initiative for veterinary medicine created by ACC Cyfronet AGH in Cracow.
+
 The main goal of this work is to utilize machine learning models to improve the wellbeing of dogs.
 The system shows improvement beyond state-of-the-art, but the results are still not satisfying. CyfroVet is working on improving this along with approaching the problem with examination of videos showing the dogs. This repository contains the following files:
 - train.py - pipeline and model that can be trained to classify dogs into three age groups. 
