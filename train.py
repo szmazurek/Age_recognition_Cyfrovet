@@ -51,7 +51,7 @@ EXPERIMENT_NAME = "No_aug"
 wandb.init(project = "CNN_tests",
 group = "Chihuahua_only",
 name = EXPERIMENT_NAME,
-job_type = "EfficientNetL2",
+job_type = "EfficientNetB7",
 config = CONFIG
 )
 ## Path do image containing the image dataset
