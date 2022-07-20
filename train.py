@@ -1,5 +1,4 @@
 import os
-from cnn_dog_breeds import EXPERIMENT_NAME
 import wandb
 import numpy as np
 import tensorflow as tf
