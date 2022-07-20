@@ -2,15 +2,16 @@
 The directory should contain subdirectories named with class names. The photos should
 be contained in subdirectories and have .jpg extension. For more info about
 TFRecords please visit https://www.tensorflow.org/tutorials/load_data/tfrecord"""
-from pathlib import Path
+
 import os
 import tensorflow as tf
 import numpy as np
 
+
 # path to source photos
-DIR_PATH = "/net/scratch/people/plgmazurekagh/dogs_datasets/FaceDetector_cropped/Huge_dataset"
+DIR_PATH = r""
 # path to folder to save tfrecords
-RECORD_PATH = "/net/scratch/people/plgmazurekagh/TFRecords_ds/Huge_ds_unprocessed"
+RECORD_PATH = r""
 if not Path.exists(RECORD_PATH):
     os.mkdir(RECORD_PATH)
 # number of pictures included in single record
