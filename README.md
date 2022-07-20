@@ -10,7 +10,7 @@ The system shows improvement beyond state-of-the-art, but the results are still 
 
 **USAGE GUIDE**
 
-1. Install packeges from requirements.txt (requirements file to be introduced soon)
+1. Install packages from requirements.txt (requirements file to be introduced soon)
 2. [train.py](https://github.com/SzymonMazurekAGH/Age_recognition_Cyfrovet/blob/main/train.py)
    1. Open file in the editor.
    2. Insert path to image folder into `DIRPATH` constant or path to TFRecord files into `RECORD_PATH` constant.
