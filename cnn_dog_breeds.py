@@ -232,4 +232,4 @@ history = model_breed.fit(
 )
 
 ## save the model
-model_breed.save('...')
+model_breed.save('models\my_model')
