@@ -46,5 +46,6 @@ The system shows improvement beyond state-of-the-art, but the results are still 
 
 **DATASETS**
 Datasets, as well as conference paper describing research done with these tools will be published soon.
-
+Currently published datasets are avaliable:
+https://tinyurl.com/dog-age-datasets
 For more information about this project please contact the owner via email: s.mazurek@cyfronet.pl
