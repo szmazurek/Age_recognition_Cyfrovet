@@ -27,15 +27,7 @@ LEARNING_RATE = 0.0001
 WEIGHT_DECAY = 0.0001
 BATCH_SIZE = 256
 NUM_EPOCHS = 150
-PROJECTION_DIM = 64
-NUM_HEADS = 6
-TRANSFORMER_UNITS = [
-    PROJECTION_DIM * 2,
-    PROJECTION_DIM,
-]  # Size of the transformer layers
-TRANSFORMER_LAYERS = 4
-MLP_HEAD_UNITS = [2048, 1024]
-REG = regularizers.L1L2(l1=1e-4, l2=1e-4)
+
 
 ## define your own logging names for Wandb
 CONFIG = dict (
@@ -72,44 +64,6 @@ feature_description = {
     'depth': tf.io.FixedLenFeature((), tf.int64)
 }
 
-def mlp(x_0, hidden_units, dropout_rate):
-    """Function to implement MLP in ViT."""
-    for units in hidden_units:
-        x_0 = layers.Dense(
-            units,
-            activation=tf.nn.gelu,
-            kernel_regularizer=REG,
-        )(x_0)
-        x_0 = layers.Dropout(dropout_rate)(x_0)
-    return x_0
-
-
-class PatchEncoder(layers.Layer):
-    """A layer to create patch embdeddings from input image when using ViT."""
-    def __init__(self, num_patches, projection_dim):
-        super().__init__()
-        self.projection_dim = projection_dim
-        self.num_patches = num_patches
-        self.projection = layers.Dense(units=self.projection_dim)
-        self.position_embedding = layers.Embedding(
-            input_dim=num_patches, output_dim=self.projection_dim
-        )
-
-    def call(self, patch):
-        """Call method for Patch encoder"""
-        positions = tf.range(start=0, limit=self.num_patches, delta=1)
-        encoded = self.projection(patch) + self.position_embedding(positions)
-        return encoded
-
-
-
-def data_augmentation(img_in):
-    """Data augmentation fucntion"""
-    img = tf.image.stateless_random_flip_up_down(img_in,seed = STATELESS_SEED)
-    img = tf.image.stateless_random_flip_left_right(img,seed = STATELESS_SEED)
-    img = tf.image.stateless_random_brightness(img,max_delta = 0.15,seed = STATELESS_SEED)
-    img = tf.image.stateless_random_contrast(img,lower=0.1, upper=0.9,seed = STATELESS_SEED)
-    return img
 
 def _parse_image_function(example_proto):
     """Function parsing TFRecrod files into image and label"""
@@ -471,5 +425,4 @@ print("Valid dataset:")
 eval_valid = model_age.evaluate(dataset_valid)
 print("Train dataset:")
 eval_train = model_age.evaluate(dataset_train)
-print("Full dataset:")
-eval_full = model_age.evaluate(dataset_full)
+
