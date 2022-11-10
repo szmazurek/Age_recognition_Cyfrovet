@@ -12,23 +12,17 @@ The system shows improvement beyond state-of-the-art, but the results are still 
 
 1. Install packages from requirements.txt (requirements file to be introduced soon)
 2. [train.py](https://github.com/SzymonMazurekAGH/Age_recognition_Cyfrovet/blob/main/train.py)
-   1. Open file in the editor.
-   2. Insert path to image folder into `DIRPATH` constant or path to TFRecord files into `RECORD_PATH` constant.
-   3. Create datasets using `create_image_dataset` function if using image dataset or `create_tfr_dataset` if using TFRecord files dataset.
-   4. Create CNN model using `create_network1` function or create CNN + ViT model using `create_network2` function.
-   5. Configure `wand.init` call if using [Weights and Biases](https://wandb.ai/site) to track your experiments (if no tracking is used `wandb.init` call and `WandbCallback` in `fit` method call can be removed).
-   6. Run the script.
+   1. Arguments are described in the script. Provide necessary ones and start training.
+   2. Configure `wand.init` call if using [Weights and Biases](https://wandb.ai/site) to track your experiments (if no tracking is used `wandb.init` call and `WandbCallback` in `fit` method call can be removed).
+   3. Run the script.
 3. [cnn_dog_breeds.py](https://github.com/SzymonMazurekAGH/Age_recognition_Cyfrovet/blob/main/cnn_dog_breeds.py)
    1. Open file in the editor.
-   2. Create CNN model using `create_network1` function or create CNN + ViT model using `create_network2` function.
+   2. Create CNN model using `create_cnn_network` function or create CNN + ViT model using `create_cnn_vit_network` function.
    3. Dataset is automatically loaded from [Tensorflow Datasets](https://www.tensorflow.org/datasets/api_docs/python/tfds) . If different data loading is needed please refer to the documentation under the link above.
    4. Configure `wand.init` call if using [Weights and Biases](https://wandb.ai/site) to track your experiments (if no tracking is used `wandb.init` call and `WandbCallback` in `fit` method call can be removed).
    5. Run the script.
 4. [tfrecords_writer.py](https://github.com/SzymonMazurekAGH/Age_recognition_Cyfrovet/blob/main/tfrecords_writer.py)
-   1. Open file in the editor.
-   2. Insert path to folder with source images into `DIR_PATH` constant and path to save TFRecord files into `RECORD_PATH` constant.
-   3. Change `BEST_NUM` constant to specify how many photos should be included into single TFRecord file.
-   4. Run the script.
+   1. Arguments are described in the script. Provide necessary ones and start training.
 5. [ga_dataset_assesment](https://github.com/SzymonMazurekAGH/Age_recognition_Cyfrovet/blob/main/ga_dataset_assesment.py) (This algorithm is currently being tested on CIFAR dataset)
    1. Open file in the editor.
    2. Insert paths to:
@@ -42,10 +36,9 @@ The system shows improvement beyond state-of-the-art, but the results are still 
    5. Run the script.
 6. [function_library.py](https://github.com/SzymonMazurekAGH/Age_recognition_Cyfrovet/blob/main/function_library.py)
    1. Import the file to your script and call the methods as needed.
-   2. Be sure to use correct paths for `DETECTOR` and `PREDICTOR` - use files provided in [Utils](https://github.com/SzymonMazurekAGH/Age_recognition_Cyfrovet/tree/main/Utlis) folder.
+   2. Be sure to use correct paths for `DETECTOR` and `PREDICTOR` - use files provided in [utils](https://github.com/SzymonMazurekAGH/Age_recognition_Cyfrovet/tree/main/utlis) folder.
 
 **DATASETS**
-Datasets, as well as conference paper describing research done with these tools will be published soon.
 Currently published datasets are avaliable:
 https://tinyurl.com/dog-age-datasets
 For more information about this project please contact the owner via email: s.mazurek@cyfronet.pl
