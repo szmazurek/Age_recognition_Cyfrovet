@@ -1,4 +1,4 @@
-"""A script to train the network for dog breed classification  task using
+"""A script to train the network for dog breed classification task using
 Stanford Dogs Dataset. Inegration with Weights and biases provided."""
 import wandb
 import tensorflow as tf
@@ -29,19 +29,17 @@ NUM_EPOCHS = 50
 
 CONFIG = dict(
     seed=SEED,
-    model_name="efficientnetv2_s",
     img_size=INPUT_SHAPE,
     num_classes=NUM_CLASSES,
     num_epochs=NUM_EPOCHS,
     batch_size=BATCH_SIZE,
 )
 
-EXPERIMENT_NAME = "efficientnetv2_s"
 wandb.init(
-    project="Breed_classifier",
-    group="Initial_run",
-    name=EXPERIMENT_NAME,
-    job_type="efficientnetv2_s",
+    project="my_proj",
+    group="my_group",
+    name="my_name",
+    job_type="my_job",
     config=CONFIG,
 )
 

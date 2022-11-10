@@ -1,428 +1,257 @@
-import os
+"""Main training script. Mind that wandb config has to be added manually."""
+
 import wandb
-import numpy as np
+import argparse
 import tensorflow as tf
 from wandb.keras import WandbCallback
 import tensorflow_addons as tfa
-from tensorflow.keras import layers,regularizers,backend as K
+import models
+import dataloaders
 
 
-SEED = 1234
-tf.random.set_seed(SEED)
-STATELESS_SEED = (SEED,SEED)
-
-physical_devices = tf.config.list_physical_devices('GPU')
-for device in physical_devices:
-    tf.config.experimental.set_memory_growth(device, True)
-
-
-strategy  = tf.distribute.MirroredStrategy()
-
-AUTOTUNE = tf.data.AUTOTUNE
-NUM_CLASSES = 3
-IMAGE_HEIGHT = 224
-IMAGE_WIDTH = 224
-INPUT_SHAPE = (IMAGE_HEIGHT, IMAGE_WIDTH, 3)
-LEARNING_RATE = 0.0001
-WEIGHT_DECAY = 0.0001
-BATCH_SIZE = 256
-NUM_EPOCHS = 150
-
-
-## define your own logging names for Wandb
-CONFIG = dict (
-    seed = SEED,
-    model_name = 'EfficientNetL2',
-    img_size = INPUT_SHAPE,
-    num_classes = NUM_CLASSES,
-    num_epochs = NUM_EPOCHS,
-    batch_size = BATCH_SIZE,
-)
-
-EXPERIMENT_NAME = "No_aug"
-wandb.init(project = "CNN_tests",
-group = "Chihuahua_only",
-name = EXPERIMENT_NAME,
-job_type = "EfficientNetB7",
-config = CONFIG
-)
-## Path do image containing the image dataset
-DIRPATH = r''
-
-# path to TFRrecord files
-RECORD_PATH = r''
-
-filenames = os.listdir(RECORD_PATH)
-for i in  range(len(filenames)):
-    filenames[i] = os.path.join(RECORD_PATH,filenames[i])
-
-feature_description = {
-    'image': tf.io.FixedLenFeature((), tf.string),
-    'label': tf.io.FixedLenFeature((), tf.int64),
-    'height': tf.io.FixedLenFeature((), tf.int64),
-    'width': tf.io.FixedLenFeature((), tf.int64),
-    'depth': tf.io.FixedLenFeature((), tf.int64)
-}
-
-
-def _parse_image_function(example_proto):
-    """Function parsing TFRecrod files into image and label"""
-    features = tf.io.parse_single_example(example_proto, feature_description)
-    image = tf.io.parse_tensor(features['image'], tf.float32)
-    image.set_shape([IMAGE_HEIGHT*IMAGE_WIDTH*3])
-    image = tf.reshape(image, [IMAGE_WIDTH, IMAGE_HEIGHT, 3])
-    image = tf.image.resize(image,(IMAGE_WIDTH,IMAGE_HEIGHT))
-    label = tf.cast(features['label'], tf.int32)
-    label = tf.one_hot(label, NUM_CLASSES)
-    return image, label
-
-def read_dataset(filename_list):
-    """Function to read and decode TFRecord files into TRecordDataset object."""
-    ignore_order = tf.data.Options()
-    ignore_order.experimental_deterministic = False  
-    dataset = tf.data.TFRecordDataset(filename_list)
-    dataset = dataset.map(_parse_image_function, num_parallel_calls=AUTOTUNE)
-    dataset = dataset.shuffle(len(list(dataset)),reshuffle_each_iteration=False)
-    return dataset
-
-def create_tfr_dataset(filenames,
-val_size=0.2,
-batch_size = 32,
-preprocess = False,
-preprocess_fn = None
-):
-    """Function to create train, test, valid and full datasets from TFRecord dataset."""
-    dataset_train = read_dataset(filenames)
-    if preprocess:
-        dataset_train = dataset_train.map(lambda x,y :(preprocess_fn(x),y))
-    dataset_full = dataset_train
-    ds_length = len(list(dataset_train))
-    val_len = round(val_size*ds_length)
-    test_len = round(val_len/2)
-
-    dataset_valid = dataset_train.take(val_len)
-    dataset_train = dataset_train.skip(val_len)
-    dataset_test = dataset_valid.take(test_len)
-    dataset_valid = dataset_valid.skip(test_len)
-
-
-    dataset_train = dataset_train.shuffle(ds_length,reshuffle_each_iteration=True)
-    dataset_test = dataset_valid.shuffle(len(list(dataset_test)),reshuffle_each_iteration=True)
-    dataset_valid = dataset_valid.shuffle(len(list(dataset_valid)),reshuffle_each_iteration=True)
-
-
-    dataset_train = dataset_train.batch(batch_size,
-    num_parallel_calls=AUTOTUNE,
-    drop_remainder=False).prefetch(buffer_size=AUTOTUNE).cache()
-
-    dataset_valid = dataset_valid.batch(batch_size,
-    num_parallel_calls=AUTOTUNE,
-    drop_remainder=False).prefetch(buffer_size=AUTOTUNE).cache()
-
-    dataset_test = dataset_test.batch(batch_size,
-    num_parallel_calls=AUTOTUNE,
-    drop_remainder=False).prefetch(buffer_size=AUTOTUNE).cache()
-
-    dataset_full = dataset_full.batch(batch_size,
-    num_parallel_calls=AUTOTUNE,
-    drop_remainder=False).prefetch(buffer_size=AUTOTUNE).cache()
-   
-    return dataset_train, dataset_valid, dataset_test, dataset_full
-
-
-
-def create_image_dataset(dirpath,
-batch_size = 32,
-img_w = 100, 
-img_h = 100,
-val_split = 0.2,
-shuffle = True,
-preprocess = False,
-preprocess_fn = None
-):
-    """Function to create train, test, valid and full datasets from folder containing
-    labeled photos."""
-    dataset_train = tf.keras.utils.image_dataset_from_directory(
-        dirpath,
-        labels='inferred',
-        label_mode='categorical',
-        class_names=None,
-        color_mode='rgb',
-        batch_size=batch_size,
-        image_size=(img_h, img_w),
-        shuffle=shuffle,
-        seed=SEED,
-        validation_split=val_split,
-        subset='training',
-        interpolation='bilinear',
-
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Age recognition training script.")
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument(
+        "img_folder_path",
+        type=str,
+        help="Path to folder with images grouped into classes.",
     )
-    dataset_valid = tf.keras.utils.image_dataset_from_directory(
-        dirpath,
-        labels='inferred',
-        label_mode='categorical',
-        class_names=None,
-        color_mode='rgb',
-        batch_size=batch_size,
-        image_size=(img_h, img_w),
-        shuffle=shuffle,
-        seed=SEED,
-        validation_split=val_split,
-        subset='validation',
-        interpolation='bilinear',
+    group.add_argument(
+        "tfr_folder_path", type=str, help="Path to folder with TFRecord files."
+    )
+    parser.add_argument(
+        "model", type=str, help="Model to use. Avaliable are cnn and cnn_vit."
+    )
+    parser.add_argument(
+        "batch_size", type=int, help="Size of input batch for the model."
+    )
+    parser.add_argument(
+        "n_classes", type=int, help="Number of classes being classified."
+    )
+    parser.add_argument(
+        "epochs", type=int, help="Number of epochs to run training for."
+    )
+    parser.add_argument("img_w", type=int, help="Input image width.")
+    parser.add_argument("img_h", type=int, help="Input image height.")
+    parser.add_argument("--lr", type=float, default=0.001, help="Learning rate.")
+    parser.add_argument(
+        "--w_decay",
+        type=float,
+        default=0.001,
+        help="Weight decay value for AdamW optimizer.",
+    )
+    parser.add_argument(
+        "--val_split",
+        type=float,
+        default=0.2,
+        help="Percentage of training data to use for validation.",
+    )
+    parser.add_argument(
+        "--one_hot",
+        type=bool,
+        default=True,
+        help="Wheather to use one hot label encoding in datasets.",
+    )
+    parser.add_argument(
+        "--shuffle",
+        type=bool,
+        default=True,
+        help="Wheather to shuffle files in training dataset.",
+    )
+    parser.add_argument(
+        "--seed", type=int, help="Random seed value for pseudo-random operations."
+    )
+    parser.add_argument(
+        "--proj_dim",
+        type=int,
+        default=64,
+        help="Embedding size for cnn_vit model. Has no effect if model is cnn only.",
+    )
+    parser.add_argument(
+        "--n_heads",
+        type=int,
+        default=6,
+        help="Number of self-attention heads in cnn_vit model. Has no effect if model is cnn only.",
+    )
+    parser.add_argument(
+        "--transformer_layers",
+        type=int,
+        default=6,
+        help="Number of attention layers in cnn_vit model. Has no effect if model is cnn only.",
+    )
+    parser.add_argument(
+        "--mlp_units",
+        type=tuple[int, int],
+        default=[2048, 1024],
+        help="Number of neurons in dense layers in MLP layer of cnn_vit model. Has no effect if model is cnn only.",
+    )
+    parser.add_argument(
+        "--finetune",
+        type=bool,
+        default=False,
+        help="Wheather to unfreeze model backbone after initial training and perform another round of training.",
+    )
+    parser.add_argument(
+        "--finetune_lr",
+        type=float,
+        default=0.00001,
+        help="Learning rate to use during finetuning.",
+    )
+    parser.add_argument(
+        "--finetune_w_decay",
+        type=float,
+        default=0.001,
+        help="Weight decay to use during finetuning.",
+    )
+    args = parser.parse_args()
 
+    if args.seed:
+        tf.random.set_seed(args.seed)
+
+    physical_devices = tf.config.list_physical_devices("GPU")
+    for device in physical_devices:
+        tf.config.experimental.set_memory_growth(device, True)
+
+    strategy = tf.distribute.MirroredStrategy()
+
+    AUTOTUNE = tf.data.AUTOTUNE
+    INPUT_SHAPE = (args.img_w, args.img_h, 3)
+
+    ## define your own logging names for Wandb
+    CONFIG = dict(
+        seed=args.seed,
+        img_size=INPUT_SHAPE,
+        num_classes=args.n_classes,
+        num_epochs=args.epochs,
+        batch_size=args.batch_size,
+        learning_rate=args.lr,
     )
 
-    dataset_full = tf.keras.utils.image_dataset_from_directory(
-        dirpath,
-        labels='inferred',
-        label_mode='categorical',
-        class_names=None,
-        color_mode='rgb',
-        batch_size=batch_size,
-        image_size=(img_h, img_w),
-        shuffle=shuffle,
-        seed=SEED,
-        validation_split=None,
-        subset=None,
-        interpolation='bilinear')
-    test_len = np.floor(0.5*len(list(dataset_valid)))
-    dataset_test = dataset_valid.take(test_len)
-    dataset_valid = dataset_valid.skip(test_len)
-    if preprocess:
-        dataset_train = dataset_train.map(lambda x,y :(preprocess_fn(x),y))
-        dataset_valid = dataset_valid.map(lambda x,y :(preprocess_fn(x),y))
-        dataset_test = dataset_test.map(lambda x,y :(preprocess_fn(x),y))
-        dataset_full = dataset_full.map(lambda x,y :(preprocess_fn(x),y))
-    dataset_train = dataset_train.prefetch(buffer_size=AUTOTUNE).cache()
-    dataset_valid = dataset_valid.prefetch(buffer_size=AUTOTUNE).cache()
-    dataset_test = dataset_test.prefetch(buffer_size=AUTOTUNE).cache()
-    dataset_full = dataset_full.prefetch(buffer_size=AUTOTUNE).cache()
-    return dataset_train, dataset_valid, dataset_test, dataset_full
-
-def cosine_decay_with_warmup(global_step,
-                             learning_rate_base,
-                             total_steps,
-                             warmup_learning_rate=0.0,
-                             warmup_steps=0,
-                             hold_base_rate_steps=0):
-    """Cosine decay schedule with warm up period.
-    Cosine annealing learning rate as described in:
-      Loshchilov and Hutter, SGDR: Stochastic Gradient Descent with Warm Restarts.
-      ICLR 2017. https://arxiv.org/abs/1608.03983
-    In this schedule, the learning rate grows linearly from warmup_learning_rate
-    to learning_rate_base for warmup_steps, then transitions to a cosine decay
-    schedule.
-    Arguments:
-        global_step {int} -- global step.
-        learning_rate_base {float} -- base learning rate.
-        total_steps {int} -- total number of training steps.
-    Keyword Arguments:
-        warmup_learning_rate {float} -- initial learning rate for warm up. (default: {0.0})
-        warmup_steps {int} -- number of warmup steps. (default: {0})
-        hold_base_rate_steps {int} -- Optional number of steps to hold base learning rate
-                                    before decaying. (default: {0})
-    Returns:
-      a float representing learning rate.
-    Raises:
-      ValueError: if warmup_learning_rate is larger than learning_rate_base,
-        or if warmup_steps is larger than total_steps.
-    """
-
-    if total_steps < warmup_steps:
-        raise ValueError('total_steps must be larger or equal to '
-                         'warmup_steps.')
-    learning_rate = 0.5 * learning_rate_base * (1 + np.cos(
-        np.pi *
-        (global_step - warmup_steps - hold_base_rate_steps
-         ) / float(total_steps - warmup_steps - hold_base_rate_steps)))
-    if hold_base_rate_steps > 0:
-        learning_rate = np.where(global_step > warmup_steps + hold_base_rate_steps,
-                                 learning_rate, learning_rate_base)
-    if warmup_steps > 0:
-        if learning_rate_base < warmup_learning_rate:
-            raise ValueError('learning_rate_base must be larger or equal to '
-                             'warmup_learning_rate.')
-        slope = (learning_rate_base - warmup_learning_rate) / warmup_steps
-        warmup_rate = slope * global_step + warmup_learning_rate
-        learning_rate = np.where(global_step < warmup_steps, warmup_rate,
-                                 learning_rate)
-    return np.where(global_step > total_steps, 0.0, learning_rate)
-
-
-class WarmUpCosineDecayScheduler(tf.keras.callbacks.Callback):
-    """Cosine decay with warmup learning rate scheduler
-    """
-
-    def __init__(self,
-                 learning_rate_base,
-                 total_steps,
-                 global_step_init=0,
-                 warmup_learning_rate=0.0,
-                 warmup_steps=0,
-                 hold_base_rate_steps=0,
-                 verbose=0):
-        """Constructor for cosine decay with warmup learning rate scheduler.
-    Arguments:
-        learning_rate_base {float} -- base learning rate.
-        total_steps {int} -- total number of training steps.
-    Keyword Arguments:
-        global_step_init {int} -- initial global step, e.g. from previous checkpoint.
-        warmup_learning_rate {float} -- initial learning rate for warm up. (default: {0.0})
-        warmup_steps {int} -- number of warmup steps. (default: {0})
-        hold_base_rate_steps {int} -- Optional number of steps to hold base learning rate
-                                    before decaying. (default: {0})
-        verbose {int} -- 0: quiet, 1: update messages. (default: {0})
-        """
-
-        super(WarmUpCosineDecayScheduler, self).__init__()
-        self.learning_rate_base = learning_rate_base
-        self.total_steps = total_steps
-        self.global_step = global_step_init
-        self.warmup_learning_rate = warmup_learning_rate
-        self.warmup_steps = warmup_steps
-        self.hold_base_rate_steps = hold_base_rate_steps
-        self.verbose = verbose
-        self.learning_rates = []
-
-    def on_batch_end(self, batch, logs=None):
-        """Define the scheduler behaviour at the end of a batch."""
-        self.global_step = self.global_step + 1
-        lr = K.get_value(self.model.optimizer.lr)
-        self.learning_rates.append(lr)
-
-    def on_batch_begin(self, batch, logs=None):
-        """Define the scheduler behaviour at the beggining of a batch."""
-        lr = cosine_decay_with_warmup(global_step=self.global_step,
-                                      learning_rate_base=self.learning_rate_base,
-                                      total_steps=self.total_steps,
-                                      warmup_learning_rate=self.warmup_learning_rate,
-                                      warmup_steps=self.warmup_steps,
-                                      hold_base_rate_steps=self.hold_base_rate_steps)
-        K.set_value(self.model.optimizer.lr, lr)
-        if self.verbose > 0:
-            print('\nBatch %05d: setting learning rate to %s.' % (self.global_step , lr))
-
-# uncomment if using Cosine Warmup
-# total_steps = int((len(list(dataset_train)) / batch_size) * num_epochs)
-# warmup_epoch = 10
-# warmup_steps = int(warmup_epoch * len(list(dataset_train)) / batch_size)
-# warm_up_lr = WarmUpCosineDecayScheduler(learning_rate_base=learning_rate,
-#                                             total_steps=total_steps,
-#                                             warmup_learning_rate=0.0,
-#                                             warmup_steps=warmup_steps,
-#                                             hold_base_rate_steps=0,
-#                                             verbose=1)
-
-
-
-def create_network1():
-    """Function to create model using the combined achitecture of pre-trained CNN with
-    standard dense layer classifier"""
-    base_model = tf.keras.applications.efficientnet.EfficientNetB7(input_shape=INPUT_SHAPE,
-                                                include_top=False,
-                                                weights='imagenet')
- 
-    base_model.trainable = False
-
-    model = tf.keras.Sequential([
-    base_model,
-    tf.keras.layers.GlobalAveragePooling2D(), 
-    tf.keras.layers.Dense(256, kernel_regularizer = REG),
-    tf.keras.layers.Dense(128,kernel_regularizer = REG),
-    tf.keras.layers.Dropout(0.3),
-    tf.keras.layers.Dense(NUM_CLASSES, activation='softmax')
-    ])
-    return model
-
-def create_network2():
-    """Function to create model using the combined achitecture of pre-trained CNN as
-    feature extractor and ViT as classifier"""
-    base_model = tf.keras.applications.efficientnet.EfficientNetB7(input_shape=INPUT_SHAPE,
-                                            include_top=False,
-                                            weights='imagenet')
-
-
-    base_model.trainable = False
-
-    inputs = layers.Input(shape=INPUT_SHAPE)
-    feature_extractor = base_model(inputs)
-    shape_to_encode = feature_extractor.shape[-1]
-    patches_num = feature_extractor.shape[1]**2
-    reshaped_features = layers.Reshape((patches_num,shape_to_encode))(feature_extractor)
-    encoded_patches = PatchEncoder(patches_num, PROJECTION_DIM)(reshaped_features)
-    for _ in range(TRANSFORMER_LAYERS):
-        x_1 = layers.LayerNormalization(epsilon=1e-6)(encoded_patches)
-        # Create a multi-head attention layer.
-        attention_output = layers.MultiHeadAttention(
-            num_heads=NUM_HEADS, key_dim=PROJECTION_DIM, dropout=0.1
-        )(x_1, x_1)
-        # Skip connection 1.
-        x_2 = layers.Add()([attention_output, encoded_patches])
-        # Layer normalization 2.
-        x_3 = layers.LayerNormalization(epsilon=1e-6)(x_2)
-        # MLP.
-        x_3 = mlp(x_3, hidden_units=TRANSFORMER_UNITS, dropout_rate=0.1)
-        # Skip connection 2.
-        encoded_patches = layers.Add()([x_3, x_2])
-    representation = layers.LayerNormalization(epsilon=1e-6)(encoded_patches)
-    representation = layers.Flatten()(representation)
-    representation = layers.Dropout(0.5)(representation)
-    output = mlp(representation, hidden_units=MLP_HEAD_UNITS, dropout_rate=0.5)
-    output = layers.Dense(NUM_CLASSES,activation = 'softmax')(output)
-    model = tf.keras.Model(inputs=inputs, outputs=output)
-    return model
-
-
-early_stop = tf.keras.callbacks.EarlyStopping(
-    monitor="val_loss",
-    patience=5,
-    mode="min",
-    restore_best_weights=True,
-)
-
-dataset_train, dataset_valid, dataset_test, dataset_full = create_image_dataset(
-    DIRPATH,
-    batch_size=BATCH_SIZE,
-    img_w=IMAGE_WIDTH,
-    img_h=IMAGE_HEIGHT
-)
-
-
-with strategy.scope():
-
-    adamw = tfa.optimizers.AdamW(
-        learning_rate=LEARNING_RATE, 
-        weight_decay=WEIGHT_DECAY,
-    )
-    optimizer = adamw
-    model_age = create_network1()
-    model_age.compile(
-    optimizer=optimizer,
-    loss=tf.keras.losses.CategoricalCrossentropy(),
-    metrics=[
-        tf.keras.metrics.CategoricalAccuracy(name="accuracy"),
-        tfa.metrics.CohenKappa(NUM_CLASSES),
-        tf.keras.metrics.Precision(),
-        tf.keras.metrics.Recall(),
-        tfa.metrics.F1Score(NUM_CLASSES)
-    ]
+    wandb.init(
+        project="my_proj",
+        group="my_group",
+        name="my_name",
+        job_type="my_job",
+        config=CONFIG,
     )
 
-history = model_age.fit(
-    dataset_train,
-    validation_data=dataset_valid,
-    epochs=NUM_EPOCHS,
-    callbacks = [
-    WandbCallback(),
-    early_stop
-    ]
-)
-model_age.save('models\my_model')
-print("Test dataset:")
-eval_test = model_age.evaluate(dataset_test)
-print("Valid dataset:")
-eval_valid = model_age.evaluate(dataset_valid)
-print("Train dataset:")
-eval_train = model_age.evaluate(dataset_train)
+    if args.img_folder_path is not None:
+        train_ds, valid_ds, test_ds = dataloaders.create_image_dataset(
+            dirpath=args.img_folder_path,
+            batch_size=args.batch_size,
+            img_w=INPUT_SHAPE[0],
+            img_h=INPUT_SHAPE[1],
+            val_split=args.val_split,
+            one_hot=args.one_hot,
+            shuffle=args.shuffle,
+            seed=args.seed,
+        )
 
+    elif args.tfr_folder_path is not None:
+        train_ds, valid_ds, test_ds = dataloaders.create_tfr_dataset(
+            dirpath=args.tfr_folder_path,
+            batch_size=args.batch_size,
+            img_w=INPUT_SHAPE[0],
+            img_h=INPUT_SHAPE[1],
+            val_split=args.val_split,
+            one_hot=args.one_hot,
+            shuffle=args.shuffle,
+            seed=args.seed,
+            num_classes=args.n_classes,
+        )
+
+    with strategy.scope():
+
+        adamw = tfa.optimizers.AdamW(
+            learning_rate=args.lr,
+            weight_decay=args.w_decay,
+        )
+        optimizer = adamw
+        if args.model == "cnn":
+            model_age = models.create_cnn_network(
+                input_shape=INPUT_SHAPE, num_classes=args.n_classes
+            )
+        elif args.model == "cnn_vit":
+            model_age = models.create_cnn_vit_network(
+                input_shape=INPUT_SHAPE,
+                num_classes=args.n_classes,
+                projection_dim=args.proj_dim,
+                transformer_layers=args.transformer_layers,
+                num_heads=args.n_heads,
+                mlp_head_units=args.mlp_units,
+            )
+        else:
+            print("Invalid model name specified!")
+
+        model_age.compile(
+            optimizer=optimizer,
+            loss=tf.keras.losses.CategoricalCrossentropy(),
+            metrics=[
+                tf.keras.metrics.CategoricalAccuracy(),
+                tfa.metrics.CohenKappa(args.n_classes),
+                tf.keras.metrics.Precision(),
+                tf.keras.metrics.Recall(),
+                tfa.metrics.F1Score(args.n_classes),
+            ],
+        )
+
+    early_stop = tf.keras.callbacks.EarlyStopping(
+        monitor="val_loss",
+        patience=5,
+        mode="min",
+        restore_best_weights=True,
+    )
+
+    history = model_age.fit(
+        train_ds,
+        validation_data=valid_ds,
+        epochs=args.epochs,
+        callbacks=[WandbCallback(), early_stop],
+    )
+
+    if args.finetune:
+        with strategy.scope():
+
+            adamw = tfa.optimizers.AdamW(
+                learning_rate=args.finetune_lr,
+                weight_decay=args.finetune_w_decay,
+            )
+            optimizer = adamw
+
+            model_age.trainable = True
+
+            model_age.compile(
+                optimizer=optimizer,
+                loss=tf.keras.losses.CategoricalCrossentropy(),
+                metrics=[
+                    tf.keras.metrics.CategoricalAccuracy(),
+                    tfa.metrics.CohenKappa(args.n_classes),
+                    tf.keras.metrics.Precision(),
+                    tf.keras.metrics.Recall(),
+                    tfa.metrics.F1Score(args.n_classes),
+                ],
+            )
+
+        early_stop = tf.keras.callbacks.EarlyStopping(
+            monitor="val_loss",
+            patience=5,
+            mode="min",
+            restore_best_weights=True,
+        )
+
+        history = model_age.fit(
+            train_ds,
+            validation_data=valid_ds,
+            epochs=args.epochs,
+            callbacks=[WandbCallback(), early_stop],
+        )
+
+    model_age.save("my_model")
+
+    print("Test dataset evaluation:")
+    eval_test = model_age.evaluate(train_ds)
+    print("Valid dataset evaluation:")
+    eval_valid = model_age.evaluate(valid_ds)
+    print("Train dataset evaluation:")
+    eval_train = model_age.evaluate(test_ds)
