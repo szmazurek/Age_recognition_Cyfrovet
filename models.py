@@ -52,7 +52,7 @@ def create_cnn_network(
     """Function to create model using the combined achitecture of pre-trained CNN with
     standard dense layer classifier. Default is EfficientNetV2S. Backbone layers are
     frozen by default."""
-    base_model = tf.keras.applications.efficientnet_v2.EfficientNetV2S(
+    base_model = tf.keras.applications.convnext.ConvNeXtBase(
         input_shape=input_shape, include_top=False, weights="imagenet"
     )
 
@@ -60,7 +60,6 @@ def create_cnn_network(
 
     model = tf.keras.Sequential(
         [
-            tf.keras.layers.Reshape((input_shape[0], input_shape[1])),
             base_model,
             tf.keras.layers.GlobalAveragePooling2D(),
             tf.keras.layers.Dense(1024),
